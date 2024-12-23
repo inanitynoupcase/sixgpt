@@ -14,9 +14,6 @@ while IFS= read -r PRIVATE_KEY; do
     MINER_DIR="miner_$i"
     mkdir -p "$MINER_DIR"
 
-    # Copy the contents of the repository into the miner directory
-    cp -r miner/* "$MINER_DIR"
-
     # Create a .env file in the miner directory
     cat <<EOF > "$MINER_DIR/.env"
 VANA_PRIVATE_KEY=$PRIVATE_KEY
@@ -24,8 +21,44 @@ VANA_NETWORK=mainnet
 OLLAMA_API_URL=http://ollama_$i:$OLLAMA_PORT/api
 EOF
 
-    # Modify the docker-compose.yml file for each miner
-    sed "s/11439:11434/$((OLLAMA_PORT + i)):11434/g; s/3000:3000/$((START_PORT + i)):3000/g; s/ollama:/ollama_$i:/g; s/sixgpt3:/sixgpt3_$i:/g" miner/docker-compose.yml > "$MINER_DIR/docker-compose.yml"
+    # Create a docker-compose.yml file for each miner
+    cat <<EOF > "$MINER_DIR/docker-compose.yml"
+version: '3.8'
+
+services:
+  ollama_$i:
+    image: ollama/ollama:0.3.12
+    ports:
+      - "$((OLLAMA_PORT + i)):$OLLAMA_PORT"
+    volumes:
+      - ollama:/root/.ollama
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  sixgpt3_$i:
+    image: sixgpt/miner:latest
+    ports:
+      - "$((START_PORT + i)):$START_PORT"
+    depends_on:
+      - ollama_$i
+    environment:
+      - VANA_PRIVATE_KEY=\${VANA_PRIVATE_KEY}
+      - VANA_NETWORK=\${VANA_NETWORK}
+      - OLLAMA_API_URL=\${OLLAMA_API_URL}
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  ollama:
+EOF
 
     # Navigate to the miner directory and run docker-compose
     (
